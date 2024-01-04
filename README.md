@@ -1,6 +1,7 @@
 # FlySky Receiver  
+> Receive FlySky signals
 
-Template to create Embedded Rust projects
+This project uses embedded rust and rtic to receive control data from the FlySky Receiver + Transmitter. 
 
 ### Resources
 
