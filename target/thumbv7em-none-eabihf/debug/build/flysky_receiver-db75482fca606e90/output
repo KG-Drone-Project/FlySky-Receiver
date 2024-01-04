@@ -1,0 +1,4 @@
+cargo:rustc-link-search=/Users/kavingnanapandithan/GitHub/KG-Drone-Project/FlySky-Receiver/target/thumbv7em-none-eabihf/debug/build/flysky_receiver-db75482fca606e90/out
+cargo:rerun-if-changed=memory.x
+cargo:rustc-link-arg=--nmagic
+cargo:rustc-link-arg=-Tlink.x
