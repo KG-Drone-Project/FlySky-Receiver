@@ -40,14 +40,16 @@ mod app {
         let clocks = rcc.cfgr.freeze();
     
         let gpioa = dp.GPIOA.split();
-        let gpiod =  dp.GPIOD.split();
+        let gpiod = dp.GPIOD.split();
+        let gpiob = dp.GPIOB.split();
     
         // Configure a pin into TIM4_CH1 mode, which will be used to observe an input PWM signal.
-        let pwm_reader_ch1 = gpiod.pd12;
-        let pwm_reader_ch2 = gpiod.pd13;
+        let pwm_reader_ch1 = gpiob.pb6;
+        let pwm_reader_ch2 = gpiob.pb7;
     
-        let monitor = Timer::new(dp.TIM4, &clocks).pwm_input(50.Hz(), pwm_reader_ch1);
-    
+        let monitor: PwmInput<TIM4> = Timer::new(dp.TIM4, &clocks).pwm_input(50.Hz(), (pwm_reader_ch1));
+   
+
         (Shared {}, Local {monitor})
     }
 

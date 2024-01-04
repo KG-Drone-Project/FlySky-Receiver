@@ -1,7 +1,7 @@
-# STM32F411 Embedded Rust Template 
+# FlySky Receiver  
 
 Template to create Embedded Rust projects
 
-### Source
+### Resources
 
-- https://github.com/rust-embedded/cortex-m-quickstart
+- https://dronebotworkshop.com/radio-control-arduino-car/

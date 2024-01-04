@@ -44,9 +44,10 @@
     {
         rtt_init_print! () ; rprintln! ("Init") ; let dp = ctx.device ; let
         rcc = dp.RCC.constrain() ; let clocks = rcc.cfgr.freeze() ; let gpioa
-        = dp.GPIOA.split() ; let gpiod = dp.GPIOD.split() ; let pwm_reader_ch1
-        = gpiod.pd12 ; let pwm_reader_ch2 = gpiod.pd13 ; let monitor = Timer
-        :: new(dp.TIM4, & clocks).pwm_input(50.Hz(), pwm_reader_ch1) ;
+        = dp.GPIOA.split() ; let gpiod = dp.GPIOD.split() ; let gpiob =
+        dp.GPIOB.split() ; let pwm_reader_ch1 = gpiob.pb6 ; let pwm_reader_ch2
+        = gpiob.pb7 ; let monitor : PwmInput < TIM4 > = Timer ::
+        new(dp.TIM4, & clocks).pwm_input(50.Hz(), (pwm_reader_ch1)) ;
         (Shared {}, Local { monitor })
     } #[allow(non_snake_case)] #[no_mangle] unsafe fn TIM4()
     {
