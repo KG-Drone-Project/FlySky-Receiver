@@ -1,67 +1,145 @@
-#![no_std]
+#![deny(unsafe_code)]
+#![deny(warnings)]
 #![no_main]
+#![no_std]
 
-// pick a panicking behavior
-use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics
-use rtic::app;
+use panic_halt as _;
 
-#[app(device = stm32f4xx_hal::pac)]
+#[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [TIM2])]
 mod app {
-    use cortex_m::{asm, peripheral};
-    use cortex_m_rt::entry;
-    use core::cell::{Cell, RefCell};
-    use stm32f4xx_hal::{
-        pac::{self, TIM4},
-        prelude::*,
-        timer::{Timer, PwmInput}
-    };
 
+    use hal::{
+        dma::{config::DmaConfig, DmaFlag, PeripheralToMemory, Stream2, StreamsTuple, Transfer},
+        pac::{DMA2, USART1},
+        prelude::*,
+        rcc::RccExt,
+        serial,
+    };
     use rtt_target::{rprintln, rtt_init_print};
+    use stm32f4xx_hal as hal;
+
+    const BUFFER_SIZE: usize = 100;
+
+    type RxTransfer = Transfer<
+        Stream2<DMA2>,
+        4,
+        serial::Rx<USART1>,
+        PeripheralToMemory,
+        &'static mut [u8; BUFFER_SIZE],
+    >;
 
     #[shared]
     struct Shared {
-
+        #[lock_free]
+        rx_transfer: RxTransfer,
     }
 
     #[local]
     struct Local {
-        monitor: PwmInput<TIM4>
+        rx_buffer: Option<&'static mut [u8; BUFFER_SIZE]>,
     }
 
-
-    #[init]
-    fn init(ctx: init::Context) -> (Shared, Local) {
+    #[init(local = [
+        rx_pool_memory: [u8; 400] = [0; 400],
+    ])]
+    fn init(cx: init::Context) -> (Shared, Local) {
         rtt_init_print!();
         rprintln!("Init");
-
-        let dp = ctx.device;
+        let dp: hal::pac::Peripherals = cx.device;
 
         let rcc = dp.RCC.constrain();
         let clocks = rcc.cfgr.freeze();
-    
+
+
         let gpioa = dp.GPIOA.split();
-        let gpiod = dp.GPIOD.split();
-        let gpiob = dp.GPIOB.split();
-    
-        // Configure a pin into TIM4_CH1 mode, which will be used to observe an input PWM signal.
-        let pwm_reader_ch1 = gpiob.pb6;
-        let pwm_reader_ch2 = gpiob.pb7;
-    
-        let monitor: PwmInput<TIM4> = Timer::new(dp.TIM4, &clocks).pwm_input(50.Hz(), (pwm_reader_ch1));
-   
 
-        (Shared {}, Local {monitor})
+        // Initialize UART with DMA events
+        let rx_pin = gpioa.pa10;
+        let mut rx = dp
+            .USART1
+            .rx(
+                rx_pin,
+                serial::Config::default()
+                    .baudrate(115200.bps())
+                    .dma(serial::config::DmaConfig::Rx),
+                &clocks,
+            )
+            .unwrap();
+
+        // Listen UART IDLE event, which will be call USART1 interrupt
+        rx.listen_idle();
+
+        let dma2 = StreamsTuple::new(dp.DMA2);
+
+        // Note! It is better to use memory pools, such as heapless::pool::Pool. But it not work with embedded_dma yet.
+        // See CHANGELOG of unreleased main branch and issue https://github.com/japaric/heapless/pull/362 for details.
+        let rx_buffer1 = cortex_m::singleton!(: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE]).unwrap();
+        let rx_buffer2 = cortex_m::singleton!(: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE]).unwrap();
+
+        // Initialize and start DMA stream
+        let mut rx_transfer = Transfer::init_peripheral_to_memory(
+            dma2.2,
+            rx,
+            rx_buffer1,
+            None,
+            DmaConfig::default()
+                .memory_increment(true)
+                .fifo_enable(true)
+                .fifo_error_interrupt(true)
+                .transfer_complete_interrupt(true),
+        );
+
+        rx_transfer.start(|_rx| {});
+
+        (
+            Shared { rx_transfer },
+            Local {
+                rx_buffer: Some(rx_buffer2),
+            },
+        )
     }
 
-    #[task(binds = TIM4, local=[monitor])]
-    fn flysky_receiver(ctx: flysky_receiver::Context) {
-        let duty_cycle = ctx.local.monitor.get_duty_cycle();
+    // Important! USART1 and DMA2_STREAM2 should the same interrupt priority!
+    #[task(binds = USART1, priority=1, local = [rx_buffer],shared = [rx_transfer])]
+    fn usart1(mut cx: usart1::Context) {
+        let transfer = &mut cx.shared.rx_transfer;
 
-        rprintln!("FlySky duty cycle: {:?}", duty_cycle);
-        ctx.local.monitor.clear_all_flags();
+        if transfer.is_idle() {
+            // Calc received bytes count
+            let bytes_count = BUFFER_SIZE - transfer.number_of_transfers() as usize;
+
+            // Allocate new buffer
+            let new_buffer = cx.local.rx_buffer.take().unwrap();
+
+            // Replace buffer and restart DMA stream
+            let (buffer, _) = transfer.next_transfer(new_buffer).unwrap();
+
+            // Get slice for received bytes
+            let bytes = &buffer[..bytes_count];
+
+            // Do something with received bytes
+            // For example, parse it or send (buffer, bytes_count) to lock-free queue.
+            if !bytes.is_empty() {
+                rprintln!("Data: {:?}", bytes );
+            }
+
+            // Free buffer
+            *cx.local.rx_buffer = Some(buffer);
+        }
     }
 
+    #[task(binds = DMA2_STREAM2, priority=1,shared = [rx_transfer])]
+    fn dma2_stream2(mut cx: dma2_stream2::Context) {
+        let transfer = &mut cx.shared.rx_transfer;
+
+        let flags = transfer.flags();
+        transfer.clear_flags(DmaFlag::FifoError | DmaFlag::TransferComplete);
+        if flags.is_transfer_complete() {
+            // Buffer is full, but no IDLE received!
+            // You can process this data or discard data (ignore transfer complete interrupt and wait IDLE).
+
+            // Note! If you want process this data, it is recommended to use double buffering.
+            // See Transfer::init_peripheral_to_memory for details.
+        }
+    }
 }
-
-
-

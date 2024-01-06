@@ -6,3 +6,4 @@ This project uses embedded rust and rtic to receive control data from the FlySky
 ### Resources
 
 - https://dronebotworkshop.com/radio-control-arduino-car/
+- https://github.com/stm32-rs/stm32f4xx-hal/blob/master/examples/rtic-serial-dma-rx-idle.rs

@@ -1,6 +1,0 @@
-cargo:rustc-cfg=cortex_m
-cargo:rustc-cfg=armv7m
-cargo:rustc-cfg=has_fpu
-cargo:rustc-link-search=/Users/kavingnanapandithan/GitHub/KG-Drone-Project/FlySky-Receiver/target/thumbv7em-none-eabihf/debug/build/cortex-m-rt-b0874acb05404f29/out
-cargo:rerun-if-changed=build.rs
-cargo:rerun-if-changed=link.x.in
