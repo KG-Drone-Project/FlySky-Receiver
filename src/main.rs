@@ -32,6 +32,7 @@ mod app {
     struct Shared {
         #[lock_free]
         rx_transfer: RxTransfer,
+        bytes: &[u8],
     }
 
     #[local]
@@ -89,10 +90,11 @@ mod app {
                 .transfer_complete_interrupt(true),
         );
 
+        let bytes: &[u8];
         rx_transfer.start(|_rx| {});
 
         (
-            Shared { rx_transfer },
+            Shared { rx_transfer, bytes },
             Local {
                 rx_buffer: Some(rx_buffer2),
             },
@@ -100,7 +102,7 @@ mod app {
     }
 
     // Important! USART1 and DMA2_STREAM2 should the same interrupt priority!
-    #[task(binds = USART1, priority=1, local = [rx_buffer],shared = [rx_transfer])]
+    #[task(binds = USART1, priority=1, local = [rx_buffer],shared = [rx_transfer, bytes])]
     fn usart1(mut cx: usart1::Context) {
         let transfer = &mut cx.shared.rx_transfer;
 
@@ -115,13 +117,24 @@ mod app {
             let (buffer, _) = transfer.next_transfer(new_buffer).unwrap();
 
             // Get slice for received bytes
-            let bytes = &buffer[..bytes_count];
+            //let bytes = &buffer[..bytes_count];
+            cx.shared.bytes.lock(|bytes| {
+                bytes = &buffer[..bytes_count];
+            });
+            //let trimmed_bytes = &bytes[2..bytes.len() - 2];
+            //rprintln!("Data: {:?}", trimmed_bytes);
 
             // Do something with received bytes
             // For example, parse it or send (buffer, bytes_count) to lock-free queue.
-            if !bytes.is_empty() {
-                rprintln!("Data: {:?}", bytes );
-            }
+            /* for _i in (0..trimmed_bytes.len()).step_by(2) {
+                if _i + 1 < bytes.len() {
+                    let _decimal: u16 = trimmed_bytes[_i+1] as u16 * 256 + trimmed_bytes[_i] as u16;
+                    rprintln!("Data({:?}) {:?}", _i, _decimal);
+                }
+                
+            }*/
+            
+
 
             // Free buffer
             *cx.local.rx_buffer = Some(buffer);
@@ -130,6 +143,7 @@ mod app {
 
     #[task(binds = DMA2_STREAM2, priority=1,shared = [rx_transfer])]
     fn dma2_stream2(mut cx: dma2_stream2::Context) {
+
         let transfer = &mut cx.shared.rx_transfer;
 
         let flags = transfer.flags();
