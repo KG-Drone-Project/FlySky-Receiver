@@ -32,7 +32,6 @@ mod app {
     struct Shared {
         #[lock_free]
         rx_transfer: RxTransfer,
-        bytes: &[u8],
     }
 
     #[local]
@@ -90,11 +89,10 @@ mod app {
                 .transfer_complete_interrupt(true),
         );
 
-        let bytes: &[u8];
         rx_transfer.start(|_rx| {});
 
         (
-            Shared { rx_transfer, bytes },
+            Shared { rx_transfer },
             Local {
                 rx_buffer: Some(rx_buffer2),
             },
@@ -102,11 +100,13 @@ mod app {
     }
 
     // Important! USART1 and DMA2_STREAM2 should the same interrupt priority!
-    #[task(binds = USART1, priority=1, local = [rx_buffer],shared = [rx_transfer, bytes])]
+    #[task(binds = USART1, priority=1, local = [rx_buffer],shared = [rx_transfer])]
     fn usart1(mut cx: usart1::Context) {
+        rprintln!("usart1 interrupt");
         let transfer = &mut cx.shared.rx_transfer;
 
         if transfer.is_idle() {
+            rprintln!("idle");
             // Calc received bytes count
             let bytes_count = BUFFER_SIZE - transfer.number_of_transfers() as usize;
 
@@ -117,33 +117,63 @@ mod app {
             let (buffer, _) = transfer.next_transfer(new_buffer).unwrap();
 
             // Get slice for received bytes
-            //let bytes = &buffer[..bytes_count];
-            cx.shared.bytes.lock(|bytes| {
-                bytes = &buffer[..bytes_count];
-            });
+            let bytes = &buffer[..bytes_count];
             //let trimmed_bytes = &bytes[2..bytes.len() - 2];
-            //rprintln!("Data: {:?}", trimmed_bytes);
 
+            let mut channel_values: [u16; 16] = [0; 16];
+
+            for i in (0..bytes.len()).step_by(2) {
+                // Extract two bytes from the pair
+                let byte1 = bytes[i];
+                let byte2 = bytes[i + 1];
+    
+                // Combine the bytes by multiplying the second number by 256
+                let combined_value = u16::from(byte1) + u16::from(byte2) * 256;
+
+                let channel_index = i / 2;
+                //rprintln!("index: {:?}", channel_index);
+                // Do something with the combined value (e.g., print or use it)
+
+                channel_values[channel_index] = combined_value;
+                //rprintln!("Combined Value: {}", combined_value);
+            }
+            //rprintln!("Bytes: {:?}", bytes);
+            rprintln!("Channels: {:?}", channel_values);
+        
+            
+            
             // Do something with received bytes
             // For example, parse it or send (buffer, bytes_count) to lock-free queue.
-            /* for _i in (0..trimmed_bytes.len()).step_by(2) {
-                if _i + 1 < bytes.len() {
-                    let _decimal: u16 = trimmed_bytes[_i+1] as u16 * 256 + trimmed_bytes[_i] as u16;
-                    rprintln!("Data({:?}) {:?}", _i, _decimal);
-                }
-                
+            /*for &byte in bytes {
+                rprintln!("{:?} ", byte);
             }*/
-            
-
 
             // Free buffer
             *cx.local.rx_buffer = Some(buffer);
+
+            
         }
     }
+    /* 
+    fn process_received_bytes(bytes: &[u8]) {
+        rprintln!("process received bytes");
+        // Process the bytes in pairs
+        for i in (0..bytes.len()).step_by(2) {
+            // Extract two bytes from the pair
+            let byte1 = bytes[i];
+            let byte2 = bytes[i + 1];
+
+            // Combine the bytes by multiplying the second number by 256
+            let combined_value = u16::from(byte1) + u16::from(byte2) * 256;
+
+            // Do something with the combined value (e.g., print or use it)
+            rprintln!("Combined Value: {}", combined_value);
+        }
+    }
+    */
 
     #[task(binds = DMA2_STREAM2, priority=1,shared = [rx_transfer])]
     fn dma2_stream2(mut cx: dma2_stream2::Context) {
-
         let transfer = &mut cx.shared.rx_transfer;
 
         let flags = transfer.flags();

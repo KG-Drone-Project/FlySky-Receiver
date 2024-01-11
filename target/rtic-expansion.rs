@@ -28,9 +28,9 @@
                 __rtic_internal_marker : :: core :: marker :: PhantomData,
             }
         }
-    } #[doc = r"Shared resources"] struct Shared
-    { rx_transfer : RxTransfer, bytes : & [u8], } #[doc = r"Local resources"]
-    struct Local { rx_buffer : Option < & 'static mut [u8 ; BUFFER_SIZE] >, }
+    } #[doc = r"Shared resources"] struct Shared { rx_transfer : RxTransfer, }
+    #[doc = r"Local resources"] struct Local
+    { rx_buffer : Option < & 'static mut [u8 ; BUFFER_SIZE] >, }
     #[allow(non_snake_case)] #[allow(non_camel_case_types)]
     #[doc = "Local resources `init` has access to"] pub struct
     __rtic_internal_initLocalResources < 'a >
@@ -79,15 +79,14 @@
         default().baudrate(115200.bps()).dma(serial :: config :: DmaConfig ::
         Rx), & clocks,).unwrap() ; rx.listen_idle() ; let dma2 = StreamsTuple
         :: new(dp.DMA2) ; let rx_buffer1 = cortex_m :: singleton!
-        (: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE]).unwrap() ; let rx_buffer2 =
+        (: [u8 ; BUFFER_SIZE] = [0 ; BUFFER_SIZE]).unwrap() ; let rx_buffer2 =
         cortex_m :: singleton!
-        (: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE]).unwrap() ; let mut
+        (: [u8 ; BUFFER_SIZE] = [0 ; BUFFER_SIZE]).unwrap() ; let mut
         rx_transfer = Transfer ::
         init_peripheral_to_memory(dma2.2, rx, rx_buffer1, None, DmaConfig ::
         default().memory_increment(true).fifo_enable(true).fifo_error_interrupt(true).transfer_complete_interrupt(true),)
-        ; let bytes : & [u8] ; rx_transfer.start(| _rx | {}) ;
-        (Shared { rx_transfer, bytes }, Local
-        { rx_buffer : Some(rx_buffer2), },)
+        ; rx_transfer.start(| _rx | {}) ;
+        (Shared { rx_transfer }, Local { rx_buffer : Some(rx_buffer2), },)
     } #[allow(non_snake_case)] #[no_mangle] unsafe fn USART1()
     {
         const PRIORITY : u8 = 1u8 ; rtic :: export ::
@@ -113,8 +112,7 @@
                 rx_transfer : & mut *
                 (& mut *
                 __rtic_internal_shared_resource_rx_transfer.get_mut()).as_mut_ptr(),
-                bytes : shared_resources :: bytes_that_needs_to_be_locked ::
-                new(), __rtic_internal_marker : core :: marker :: PhantomData,
+                __rtic_internal_marker : core :: marker :: PhantomData,
             }
         }
     } #[allow(non_snake_case)] #[no_mangle] unsafe fn DMA2_STREAM2()
@@ -145,9 +143,8 @@
     __rtic_internal_usart1SharedResources < 'a >
     {
         #[allow(missing_docs)] pub rx_transfer : & 'a mut RxTransfer,
-        #[allow(missing_docs)] pub bytes : shared_resources ::
-        bytes_that_needs_to_be_locked < 'a >, #[doc(hidden)] pub
-        __rtic_internal_marker : core :: marker :: PhantomData < & 'a () >,
+        #[doc(hidden)] pub __rtic_internal_marker : core :: marker ::
+        PhantomData < & 'a () >,
     } #[doc = r" Execution context"] #[allow(non_snake_case)]
     #[allow(non_camel_case_types)] pub struct __rtic_internal_usart1_Context <
     'a >
@@ -207,15 +204,23 @@
         as Context ;
     } #[allow(non_snake_case)] fn usart1(mut cx : usart1 :: Context)
     {
-        use rtic :: Mutex as _ ; use rtic :: mutex :: prelude :: * ; let
-        transfer = & mut cx.shared.rx_transfer ; if transfer.is_idle()
+        use rtic :: Mutex as _ ; use rtic :: mutex :: prelude :: * ; rprintln!
+        ("usart1 interrupt") ; let transfer = & mut cx.shared.rx_transfer ; if
+        transfer.is_idle()
         {
-            let bytes_count = BUFFER_SIZE - transfer.number_of_transfers() as
-            usize ; let new_buffer = cx.local.rx_buffer.take().unwrap() ;
-            let(buffer, _) = transfer.next_transfer(new_buffer).unwrap() ;
-            cx.shared.bytes.lock(| bytes |
-            { bytes = & buffer [.. bytes_count] ; }) ; * cx.local.rx_buffer =
-            Some(buffer) ;
+            rprintln! ("idle") ; let bytes_count = BUFFER_SIZE -
+            transfer.number_of_transfers() as usize ; let new_buffer =
+            cx.local.rx_buffer.take().unwrap() ; let(buffer, _) =
+            transfer.next_transfer(new_buffer).unwrap() ; let bytes = & buffer
+            [.. bytes_count] ; let mut channel_values : [u16 ; 16] = [0 ; 16]
+            ; for i in(0 .. bytes.len()).step_by(2)
+            {
+                let byte1 = bytes [i] ; let byte2 = bytes [i + 1] ; let
+                combined_value = u16 :: from(byte1) + u16 :: from(byte2) * 256
+                ; let channel_index = i / 2 ; channel_values [channel_index] =
+                combined_value ;
+            } rprintln! ("Channels: {:?}", channel_values) ; *
+            cx.local.rx_buffer = Some(buffer) ;
         }
     } #[allow(non_snake_case)] fn
     dma2_stream2(mut cx : dma2_stream2 :: Context)
@@ -232,37 +237,6 @@
     new(core :: mem :: MaybeUninit :: uninit()) ;
     #[allow(non_camel_case_types)] #[allow(non_upper_case_globals)]
     #[doc(hidden)] #[link_section = ".uninit.rtic1"] static
-    __rtic_internal_shared_resource_bytes : rtic :: RacyCell < core :: mem ::
-    MaybeUninit < & [u8] >> = rtic :: RacyCell ::
-    new(core :: mem :: MaybeUninit :: uninit()) ; impl < 'a > rtic :: Mutex
-    for shared_resources :: bytes_that_needs_to_be_locked < 'a >
-    {
-        type T = & [u8] ; #[inline(always)] fn lock < RTIC_INTERNAL_R >
-        (& mut self, f : impl FnOnce(& mut & [u8]) -> RTIC_INTERNAL_R) ->
-        RTIC_INTERNAL_R
-        {
-            #[doc = r" Priority ceiling"] const CEILING : u8 = 1u8 ; unsafe
-            {
-                rtic :: export ::
-                lock(__rtic_internal_shared_resource_bytes.get_mut() as * mut
-                _, CEILING, stm32f4xx_hal :: pac :: NVIC_PRIO_BITS, f,)
-            }
-        }
-    } mod shared_resources
-    {
-        #[doc(hidden)] #[allow(non_camel_case_types)] pub struct
-        bytes_that_needs_to_be_locked < 'a >
-        { __rtic_internal_p : :: core :: marker :: PhantomData < & 'a () >, }
-        impl < 'a > bytes_that_needs_to_be_locked < 'a >
-        {
-            #[inline(always)] pub unsafe fn new() -> Self
-            {
-                bytes_that_needs_to_be_locked
-                { __rtic_internal_p : :: core :: marker :: PhantomData }
-            }
-        }
-    } #[allow(non_camel_case_types)] #[allow(non_upper_case_globals)]
-    #[doc(hidden)] #[link_section = ".uninit.rtic2"] static
     __rtic_internal_local_resource_rx_buffer : rtic :: RacyCell < core :: mem
     :: MaybeUninit < Option < & 'static mut [u8 ; BUFFER_SIZE] > >> = rtic ::
     RacyCell :: new(core :: mem :: MaybeUninit :: uninit()) ;
@@ -272,9 +246,8 @@
     #[doc(hidden)] #[no_mangle] unsafe extern "C" fn main() ->!
     {
         rtic :: export :: assert_send :: < RxTransfer > () ; rtic :: export ::
-        assert_send :: < & [u8] > () ; rtic :: export :: interrupt ::
-        disable() ; let mut core : rtic :: export :: Peripherals = rtic ::
-        export :: Peripherals :: steal().into() ; let _ =
+        interrupt :: disable() ; let mut core : rtic :: export :: Peripherals
+        = rtic :: export :: Peripherals :: steal().into() ; let _ =
         you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml ::
         interrupt :: TIM2 ; const _ : () =
         if(1 << stm32f4xx_hal :: pac :: NVIC_PRIO_BITS) < 1u8 as usize
@@ -308,8 +281,6 @@
             init(init :: Context :: new(core.into())) ;
             __rtic_internal_shared_resource_rx_transfer.get_mut().write(core
             :: mem :: MaybeUninit :: new(shared_resources.rx_transfer)) ;
-            __rtic_internal_shared_resource_bytes.get_mut().write(core :: mem
-            :: MaybeUninit :: new(shared_resources.bytes)) ;
             __rtic_internal_local_resource_rx_buffer.get_mut().write(core ::
             mem :: MaybeUninit :: new(local_resources.rx_buffer)) ; rtic ::
             export :: interrupt :: enable() ;

@@ -1,1 +1,1 @@
-/Users/kavingnanapandithan/GitHub/KG-Drone-Project/FlySky-Receiver/target/thumbv7em-none-eabihf/debug/flysky_receiver: /Users/kavingnanapandithan/GitHub/KG-Drone-Project/FlySky-Receiver/build.rs /Users/kavingnanapandithan/GitHub/KG-Drone-Project/FlySky-Receiver/memory.x /Users/kavingnanapandithan/GitHub/KG-Drone-Project/FlySky-Receiver/src/main.rs
+/home/kavin/Github/FlySky-Receiver/target/thumbv7em-none-eabihf/debug/flysky_receiver: /home/kavin/Github/FlySky-Receiver/build.rs /home/kavin/Github/FlySky-Receiver/memory.x /home/kavin/Github/FlySky-Receiver/src/main.rs
