@@ -16,6 +16,8 @@ The FlySky Receiver sends data packets consisting of 32 bytes. The structure of 
 
 Within the `main.rs` file, the core functionality for processing data from the FlySky Receiver is orchestrated. The UART and DMA is configured to allow communication between the STM32 and the FlySky Receiver . The packet parsing logic extracts pertinent information from the received data packet, adhering to the predefined structure that designates the first byte as the protocol length, the second as the command code, and the subsequent bytes as channel data. 
 
+It seems as though that interrupts occur too frequently to process the data in the usart1 function. Instead I made a *Software Task* to process this data, and give it a priority of two so that the usart1 interrupt does not disturb the process data function. 
+
 ### Resources
 
 - https://dronebotworkshop.com/radio-control-arduino-car/
