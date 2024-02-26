@@ -109,9 +109,9 @@ mod app {
         let transfer = &mut cx.shared.rx_transfer;
 
         if transfer.is_idle() {
-            rprintln!("idle");
+            rprintln!("tansfer is idle");
             // Calc received bytes count
-            //let bytes_count = BUFFER_SIZE - transfer.number_of_transfers() as usize;
+            let bytes_count = BUFFER_SIZE - transfer.number_of_transfers() as usize;
 
             // Allocate new buffer
             let new_buffer = cx.local.rx_buffer.take().unwrap();
@@ -119,44 +119,57 @@ mod app {
             // Replace buffer and restart DMA stream
             let (buffer, _) = transfer.next_transfer(new_buffer).unwrap();
 
-            // Get slice for received bytes
-            //let bytes = &buffer[..bytes_count];
+            //let mut copied_buffer = [0; BUFFER_SIZE];
 
-            process_received_bytes::spawn(*buffer).unwrap();
+            //copied_buffer.copy_from_slice(&buffer[..bytes_count]);
+
+            // Get slice for received bytes
+            let _bytes = &buffer[..bytes_count];
+            rprintln!("Data PRE-PROC: {:?}", _bytes);
+
+            rprintln!("Byte count: {:?}", bytes_count);
+            //process_received_bytes::spawn(*buffer).unwrap();
 
             // Free buffer
+
             *cx.local.rx_buffer = Some(buffer);
 
-            
         }
     }
-    
+
+
     #[task(priority = 2)]
     async fn process_received_bytes(mut _ctx: process_received_bytes::Context, buffer: [u8; BUFFER_SIZE]) {
         rprintln!("process received bytes");
 
         let bytes = &buffer[..32];
 
-        let mut channel_values: [u16; 16] = [0; 16];
-
-        for i in (0..bytes.len()).step_by(2) {
-            // Extract two bytes from the pair
-            let byte1 = bytes[i];
-            let byte2 = bytes[i + 1];
-
-            // Combine the bytes by multiplying the second number by 256
-            let combined_value = u16::from(byte1) + u16::from(byte2) * 256;
-
-            let channel_index = i / 2;
-            //rprintln!("index: {:?}", channel_index);
-            // Do something with the combined value (e.g., print or use it)
-
-            channel_values[channel_index] = combined_value;
-            //rprintln!("Combined Value: {}", combined_value);
-        }
         rprintln!("Bytes: {:?}", bytes);
-        rprintln!("Channels: {:?}", channel_values);
 
+        /*let mut channel_values: [u16; 16] = [0; 16];
+        if bytes[0] == 32 {
+            for i in (0..bytes.len()).step_by(2) {
+                if i + 1 < bytes.len() {
+                    // Extract two bytes from the pair
+                    let byte1 = bytes[i];
+                    let byte2 = bytes[i + 1];
+
+                    // Combine the bytes by multiplying the second number by 256
+                    //let combined_value = u16::from(byte1) + u16::from(byte2) * 256;
+                    let combined_value = u16::from(byte1) | (u16::from(byte2) << 8);
+
+                    let channel_index = i / 2;
+                    //rprintln!("index: {:?}", channel_index);
+                    // Do something with the combined value (e.g., print or use it)
+
+                    channel_values[channel_index] = combined_value;
+                    //rprintln!("Combined Value: {}", combined_value);
+                } else {
+                    break
+                }
+            }
+        }
+        rprintln!("Channels: {:?}", channel_values); */
     }
 
     /*
@@ -175,7 +188,7 @@ mod app {
             rprintln!("Combined Value: {}", combined_value);
         }
     }*/
-    
+
 
     #[task(binds = DMA2_STREAM2, priority=1,shared = [rx_transfer])]
     fn dma2_stream2(mut cx: dma2_stream2::Context) {
