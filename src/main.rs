@@ -3,6 +3,7 @@
 #![no_main]
 #![no_std]
 #![feature(type_alias_impl_trait)]
+#![allow(non_snake_case)]
 
 use panic_halt as _;
 
@@ -18,8 +19,11 @@ mod app {
     };
     use rtt_target::{rprintln, rtt_init_print};
     use stm32f4xx_hal as hal;
+    use cortex_m::interrupt::Mutex;
+    use core::cell::RefCell;
 
     const BUFFER_SIZE: usize = 100;
+    // mut RX_BUFFER: Mutex<RefCell<Option<[u8; BUFFER_SIZE]>>> ;
 
     type RxTransfer = Transfer<
         Stream2<DMA2>,
@@ -33,6 +37,7 @@ mod app {
     struct Shared {
         #[lock_free]
         rx_transfer: RxTransfer,
+        BUFFER: Mutex<RefCell<Option<[u8; BUFFER_SIZE]>>>
     }
 
     #[local]
@@ -94,8 +99,10 @@ mod app {
 
         rx_transfer.start(|_rx| {});
 
+        let BUFFER = Mutex::new(RefCell::new(None));
+
         (
-            Shared { rx_transfer },
+            Shared { rx_transfer, BUFFER },
             Local {
                 rx_buffer: Some(rx_buffer2),
             },
@@ -103,7 +110,7 @@ mod app {
     }
 
     // Important! USART1 and DMA2_STREAM2 should the same interrupt priority!
-    #[task(binds = USART1, priority=1, local = [rx_buffer],shared = [rx_transfer])]
+    #[task(binds = USART1, priority=1, local = [rx_buffer],shared = [rx_transfer, BUFFER])]
     fn usart1(mut cx: usart1::Context) {
         rprintln!("usart1 interrupt");
         let transfer = &mut cx.shared.rx_transfer;
@@ -128,8 +135,11 @@ mod app {
             rprintln!("Data PRE-PROC: {:?}", _bytes);
 
             rprintln!("Byte count: {:?}", bytes_count);
-            //process_received_bytes::spawn(*buffer).unwrap();
 
+            cortex_m::interrupt::free(|cs| {
+                cx.shared.BUFFER.lock(|f| f.borrow(cs).replace(Some(*buffer)));
+            });
+            process_received_bytes::spawn().unwrap();
             // Free buffer
 
             *cx.local.rx_buffer = Some(buffer);
@@ -138,13 +148,20 @@ mod app {
     }
 
 
-    #[task(priority = 2)]
-    async fn process_received_bytes(mut _ctx: process_received_bytes::Context, buffer: [u8; BUFFER_SIZE]) {
+    #[task(priority = 2, shared = [BUFFER])]
+    async fn process_received_bytes(mut ctx: process_received_bytes::Context) {
         rprintln!("process received bytes");
 
-        let bytes = &buffer[..32];
+        cortex_m::interrupt::free(|cs| {
+            ctx.shared.BUFFER.lock(|f| {
+                if let Some(buffer) = f.borrow(cs).replace(None) {
+                    let bytes = &buffer[..32];
+                    rprintln!("Bytes: {:?}", bytes);
+                }
+            });
+            
+        });
 
-        rprintln!("Bytes: {:?}", bytes);
 
         /*let mut channel_values: [u16; 16] = [0; 16];
         if bytes[0] == 32 {
