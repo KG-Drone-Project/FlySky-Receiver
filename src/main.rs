@@ -129,7 +129,7 @@ mod app {
 
             rprintln!("Byte count: {:?}", bytes_count);
 
-            if bytes_count != 32 {
+            if bytes_count == 32 {
                 process_received_bytes::spawn(*buffer).unwrap();
             }
 
